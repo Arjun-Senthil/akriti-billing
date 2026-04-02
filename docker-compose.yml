@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: akriti-db
+    environment:
+      POSTGRES_USER: akriti_admin
+      POSTGRES_PASSWORD: akriti_local_dev
+      POSTGRES_DB: akriti_billing
+    ports:
+      - "5432:5432"
+    volumes:
+      - akriti_pgdata:/var/lib/postgresql/data
+
+volumes:
+  akriti_pgdata:
