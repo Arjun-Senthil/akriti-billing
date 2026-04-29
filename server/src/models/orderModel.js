@@ -93,20 +93,52 @@ const createOrder = async ({ customerId, deliveryDate, notes, items }) => {
   }
 }
 
-// ── List all active orders with customer info + balance due
+// ── List orders with customer info + balance due
+//
+// IMPORTANT BEHAVIOUR:
+//   - By default, cancelled orders are EXCLUDED from results.
+//   - Pass { status: 'cancelled' } to fetch cancelled-only (for the undo panel).
+//   - Auto-purge runs on every call: cancelled orders older than 24 hours
+//     get soft-deleted so they permanently disappear without any scheduled job.
+//
+// Why auto-purge in findAll and not a cron job?
+//   A cron job needs a separate process, a scheduler, and ops overhead.
+//   For a single-store app, piggy-backing cleanup onto the list query is
+//   simpler, reliable, and zero extra infrastructure. The worst case:
+//   a stale cancelled order lives a few extra hours if nobody opens the
+//   orders page — totally acceptable for this use case.
 const findAll = async ({ status, customerId, search } = {}) => {
+
+  // ── Auto-purge: soft-delete cancelled orders past the 24-hour window
+  await pool.query(
+    `UPDATE orders
+     SET deleted_at = NOW(), updated_at = NOW()
+     WHERE status      = 'cancelled'
+       AND cancelled_at IS NOT NULL
+       AND cancelled_at < NOW() - INTERVAL '24 hours'
+       AND deleted_at  IS NULL`
+  )
+
   const conditions = ['o.deleted_at IS NULL']
   const params     = []
   let   i          = 1
 
-  if (status)     { conditions.push(`o.status = $${i++}`);                              params.push(status) }
-  if (customerId) { conditions.push(`o.customer_id = $${i++}`);                         params.push(customerId) }
+  if (status) {
+    // Explicit status filter — show exactly what was asked for
+    conditions.push(`o.status = $${i++}`)
+    params.push(status)
+  } else {
+    // Default: hide cancelled orders from the main list
+    conditions.push(`o.status != 'cancelled'`)
+  }
+
+  if (customerId) { conditions.push(`o.customer_id = $${i++}`);                              params.push(customerId) }
   if (search)     { conditions.push(`(c.name ILIKE $${i} OR o.order_number ILIKE $${i++})`); params.push(`%${search}%`) }
 
   const res = await pool.query(
     `SELECT
        o.id, o.order_number, o.status, o.order_date, o.delivery_date,
-       o.grand_total, o.notes, o.created_at,
+       o.grand_total, o.notes, o.created_at, o.cancelled_at,
        c.name  AS customer_name,
        c.phone AS customer_phone,
        -- Balance = grand_total minus all payments made so far
@@ -155,12 +187,25 @@ const findById = async (id) => {
 }
 
 // ── Update status / delivery date / notes
+//
+// cancelled_at logic (CASE expression):
+//   - New status IS 'cancelled'     → record the exact cancellation time
+//   - New status IS NOT NULL (undo) → clear cancelled_at (order is active again)
+//   - No status change ($1 is null) → leave cancelled_at untouched
+//
+// This is how the 24-hour window is anchored: to the moment of cancellation,
+// not to the last edit time.
 const updateOrder = async (id, { status, deliveryDate, notes }) => {
   const res = await pool.query(
     `UPDATE orders
      SET status        = COALESCE($1, status),
          delivery_date = COALESCE($2, delivery_date),
          notes         = COALESCE($3, notes),
+         cancelled_at  = CASE
+                           WHEN $1 = 'cancelled' THEN NOW()
+                           WHEN $1 IS NOT NULL   THEN NULL
+                           ELSE cancelled_at
+                         END,
          updated_at    = NOW()
      WHERE id = $4 AND deleted_at IS NULL
      RETURNING *`,
@@ -169,7 +214,7 @@ const updateOrder = async (id, { status, deliveryDate, notes }) => {
   return res.rows[0] || null
 }
 
-// ── Soft delete
+// ── Soft delete (used by auto-purge; no longer called directly from UI)
 const softDeleteOrder = async (id) => {
   const res = await pool.query(
     `UPDATE orders SET deleted_at = NOW(), updated_at = NOW()

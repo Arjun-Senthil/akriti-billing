@@ -9,7 +9,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getOrderById, deleteOrder } from '../api/orders'
+import { getOrderById, updateOrder } from '../api/orders'
 
 const STATUS_STYLES = {
   received:  'bg-gray-100 text-gray-700',
@@ -52,9 +52,9 @@ export default function OrderDetail() {
   }, [id])
 
   const handleDelete = async () => {
-    if (!window.confirm(`Cancel order ${order.order_number}? This cannot be undone.`)) return
+    if (!window.confirm(`Cancel order ${order.order_number}?\nYou'll have 24 hours to undo this from the Orders list.`)) return
     try {
-      await deleteOrder(order.id)
+      await updateOrder(order.id, { status: 'cancelled' })
       navigate('/orders')
     } catch {
       alert('Could not cancel order.')
