@@ -3,8 +3,9 @@ require('dotenv').config();
 const express        = require('express');
 const cors           = require('cors');
 const pool           = require('./config/database');
-const customerRoutes = require('./routes/customerRoutes');
-const errorHandler   = require('./middleware/errorHandler');
+const customerRoutes    = require('./routes/customerRoutes');
+const garmentTypeRoutes = require('./routes/garmentTypeRoutes');
+const errorHandler      = require('./middleware/errorHandler');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -24,7 +25,8 @@ app.use(cors());
 // will be at /api/customers/... automatically.
 // Adding a new module later = one new line here.
 // -------------------------------------------------------------
-app.use('/api/customers', customerRoutes);
+app.use('/api/customers',     customerRoutes);
+app.use('/api/garment-types', garmentTypeRoutes);
 
 // -------------------------------------------------------------
 // Health check — always keep this working

@@ -1,0 +1,14 @@
+/* Tailwind v4: single import replaces the old three-line directive setup.
+   @import "tailwindcss" pulls in base reset, components, and utilities together. */
+@import "tailwindcss";
+
+/* @theme: Tailwind v4's way of defining custom design tokens.
+   In v3 this lived in tailwind.config.js → theme.extend.colors.
+   In v4 it lives here in CSS. Same result, different location. */
+@theme {
+  --color-brand-50:  #faf5ff;
+  --color-brand-100: #f3e8ff;
+  --color-brand-500: #a855f7;
+  --color-brand-600: #9333ea;
+  --color-brand-700: #7e22ce;
+}
