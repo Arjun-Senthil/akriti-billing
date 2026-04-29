@@ -1,0 +1,448 @@
+{
+  "info": {
+    "name": "Akriti Billing API",
+    "_postman_id": "akriti-billing-collection-v1",
+    "description": "Complete API collection for the Akriti Billing App.\n\nSetup:\n1. Import this file into Postman (File → Import)\n2. Import Akriti_Local.postman_environment.json as well\n3. Select 'Akriti Local' from the environment dropdown (top right)\n4. All requests use {{baseUrl}} and {{customerId}} variables from that environment\n\nAs you add new modules (orders, payments, settings), add new folders here.\nCommit changes to this file to keep the collection version-controlled.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [],
+  "item": [
+
+    {
+      "name": "System",
+      "description": "Health checks and system-level endpoints",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Verifies the API server is running and can reach PostgreSQL.\nExpected: { status: 'healthy', timestamp: ..., service: 'Akriti Billing API' }"
+          },
+          "response": []
+        },
+        {
+          "name": "Unknown Route (404 test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nonexistent",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nonexistent"]
+            },
+            "description": "Tests that undefined routes return a clean 404 JSON response instead of an HTML error page."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Customers",
+      "description": "CRUD operations for customer management.\nAll soft-deletes — data is never physically removed (GST 6-year retention requirement).",
+      "item": [
+
+        {
+          "name": "List All Customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Returns all active (non-deleted) customers ordered by name.\nExpected: { success: true, count: N, data: [...] }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Search Customers by Name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers?search=Priya",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Priya",
+                  "description": "Case-insensitive search. Change to any name or phone number."
+                }
+              ]
+            },
+            "description": "Searches customers by name OR phone using case-insensitive partial match.\nTry: ?search=Priya or ?search=9876"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Search Customers by Phone",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers?search=9876543210",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "9876543210"
+                }
+              ]
+            },
+            "description": "Same endpoint, searching by phone number instead of name."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Customer by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}"]
+            },
+            "description": "Returns a single customer with all their saved measurements.\nUpdate {{customerId}} in the environment to the ID you want to fetch.\nExpected: { success: true, data: { ...customer, measurements: [...] } }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Customer — Not Found (404 test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/99999",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "99999"]
+            },
+            "description": "Tests the 404 response when a customer ID does not exist.\nExpected: { success: false, error: 'Customer not found' }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"phone\": \"9876543210\",\n  \"email\": \"priya.sharma@gmail.com\",\n  \"address\": \"12, MG Road, Indiranagar, Bangalore - 560038\",\n  \"notes\": \"Prefers loose fit. Allergic to synthetic fabric.\",\n  \"consent_given\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Creates a new customer.\nRequired: name, phone, consent_given (must be true — DPDP Act 2023 compliance)\nOptional: email, address, notes\n\nAfter creating, copy the returned 'id' into the {{customerId}} environment variable."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Create Customer — Missing Consent (validation test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"phone\": \"9123456789\",\n  \"consent_given\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Tests that the API rejects a customer creation without consent.\nExpected: 400 { success: false, error: 'Customer consent is required...' }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Create Customer — Duplicate Phone (conflict test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Someone Else\",\n  \"phone\": \"9876543210\",\n  \"consent_given\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Tests duplicate phone rejection (phone must be unique per customer).\nExpected: 409 { success: false, error: 'A customer with this phone number already exists' }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"phone\": \"9876543210\",\n  \"email\": \"priya.updated@gmail.com\",\n  \"address\": \"15, 5th Cross, Koramangala, Bangalore - 560095\",\n  \"notes\": \"Updated address. Still prefers loose fit.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}"]
+            },
+            "description": "Updates an existing customer's details.\nRequired: name, phone\nNote: This change will be recorded in audit_logs with old and new values."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Delete Customer (Soft Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}"]
+            },
+            "description": "Soft-deletes a customer — sets deleted_at timestamp, does NOT remove the row.\nThe customer will no longer appear in list/search results.\nAll their historical orders and invoices remain intact for GST audit.\nExpected: { success: true, message: 'Customer deactivated successfully' }"
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "Measurements",
+      "description": "Save and retrieve customer body measurements per garment type.\nMeasurement field names come from garment_types.measurement_fields — whatever staff named them.",
+      "item": [
+
+        {
+          "name": "Save Measurements — Blouse (garment_type_id: 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"garment_type_id\": 1,\n  \"measurements\": {\n    \"chest\": 36,\n    \"waist\": 30,\n    \"shoulder_width\": 14,\n    \"sleeve_length\": 22,\n    \"back_length\": 15,\n    \"front_length\": 14,\n    \"neck_depth\": 6\n  },\n  \"notes\": \"Measured on 29 April 2026. Customer confirmed.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}/measurements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}", "measurements"]
+            },
+            "description": "Saves measurements for a Blouse (garment_type_id = 1).\nThis is an upsert — safe to call multiple times. If measurements already exist for this garment type, they are updated. If not, a new record is created.\nThe field names (chest, waist, etc.) must match garment_types.measurement_fields for garment_type_id 1."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Measurements — Kurta (garment_type_id: 2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"garment_type_id\": 2,\n  \"measurements\": {\n    \"chest\": 36,\n    \"waist\": 30,\n    \"hip\": 38,\n    \"shoulder_width\": 14,\n    \"sleeve_length\": 22,\n    \"length\": 44\n  },\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}/measurements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}", "measurements"]
+            },
+            "description": "Saves measurements for a Kurta (garment_type_id = 2).\nOne customer can have separate measurement records for each garment type."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Measurements — Lehenga (garment_type_id: 3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"garment_type_id\": 3,\n  \"measurements\": {\n    \"waist\": 28,\n    \"hip\": 38,\n    \"length\": 42,\n    \"blouse_chest\": 34,\n    \"blouse_waist\": 28,\n    \"blouse_back_length\": 14\n  },\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}/measurements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}", "measurements"]
+            },
+            "description": "Saves measurements for a Lehenga (garment_type_id = 3)."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Measurements — Pants (garment_type_id: 4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"garment_type_id\": 4,\n  \"measurements\": {\n    \"waist\": 30,\n    \"hip\": 38,\n    \"inseam\": 28,\n    \"outseam\": 40,\n    \"thigh\": 22,\n    \"knee\": 15,\n    \"bottom_width\": 14\n  },\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}/measurements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}", "measurements"]
+            },
+            "description": "Saves measurements for Pants (garment_type_id = 4)."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Measurements — Missing fields (validation test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"forgot to send garment_type_id and measurements\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}/measurements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}", "measurements"]
+            },
+            "description": "Tests validation — should reject requests missing garment_type_id or measurements.\nExpected: 400 { success: false, error: 'garment_type_id is required' }"
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Customer with Measurements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{customerId}}"]
+            },
+            "description": "Same as 'Get Customer by ID' — included here as a reminder that measurements are embedded in the customer response.\nCheck the 'measurements' array in the response after saving measurements above."
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "Audit Log Verification",
+      "description": "Not API endpoints — these are reminders to check the audit trail directly in the DB after operations.\nRun in your terminal:\ndocker exec -it akriti-db psql -U akriti_admin -d akriti_billing -c \"SELECT table_name, record_id, action, changed_by, changed_at FROM audit_logs ORDER BY changed_at DESC LIMIT 20;\"",
+      "item": []
+    }
+
+  ]
+}
