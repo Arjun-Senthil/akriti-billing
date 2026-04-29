@@ -19,6 +19,9 @@ import Layout          from './components/Layout'
 import CustomerList    from './pages/CustomerList'
 import CustomerForm    from './pages/CustomerForm'
 import CustomerDetail  from './pages/CustomerDetail'
+import OrderList       from './pages/OrderList'
+import OrderForm       from './pages/OrderForm'
+import OrderDetail     from './pages/OrderDetail'
 
 function App() {
   return (
@@ -27,8 +30,8 @@ function App() {
         {/* Layout wraps all pages — sidebar + main area */}
         <Route path="/" element={<Layout />}>
 
-          {/* Default: redirect root to /customers */}
-          <Route index element={<Navigate to="/customers" replace />} />
+          {/* Default: redirect root to /orders */}
+          <Route index element={<Navigate to="/orders" replace />} />
 
           {/* Customer module */}
           <Route path="customers"          element={<CustomerList />} />
@@ -36,9 +39,13 @@ function App() {
           <Route path="customers/:id"      element={<CustomerDetail />} />
           <Route path="customers/:id/edit" element={<CustomerForm />} />
 
-          {/* Future modules — uncomment as we build them
+          {/* Order module (M3) */}
           <Route path="orders"             element={<OrderList />} />
           <Route path="orders/new"         element={<OrderForm />} />
+          <Route path="orders/:id"         element={<OrderDetail />} />
+          <Route path="orders/:id/edit"    element={<OrderForm />} />
+
+          {/* Future modules
           <Route path="dashboard"          element={<Dashboard />} />
           <Route path="settings"           element={<Settings />} />
           */}

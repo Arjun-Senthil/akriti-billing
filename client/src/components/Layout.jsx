@@ -11,8 +11,8 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 // Nav items — add a new object here when we build each module
 const NAV_ITEMS = [
+  { to: '/orders',    label: 'Orders' },
   { to: '/customers', label: 'Customers' },
-  // { to: '/orders',    label: 'Orders' },     ← M3
   // { to: '/payments',  label: 'Payments' },   ← M5
   // { to: '/dashboard', label: 'Dashboard' },  ← M7
   // { to: '/settings',  label: 'Settings' },   ← configurable fields

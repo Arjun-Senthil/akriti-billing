@@ -5,6 +5,8 @@ const cors           = require('cors');
 const pool           = require('./config/database');
 const customerRoutes    = require('./routes/customerRoutes');
 const garmentTypeRoutes = require('./routes/garmentTypeRoutes');
+const orderRoutes       = require('./routes/orderRoutes');
+const settingsRoutes    = require('./routes/settingsRoutes');
 const errorHandler      = require('./middleware/errorHandler');
 
 const app  = express();
@@ -27,6 +29,8 @@ app.use(cors());
 // -------------------------------------------------------------
 app.use('/api/customers',     customerRoutes);
 app.use('/api/garment-types', garmentTypeRoutes);
+app.use('/api/orders',        orderRoutes);
+app.use('/api/settings',      settingsRoutes);
 
 // -------------------------------------------------------------
 // Health check — always keep this working
