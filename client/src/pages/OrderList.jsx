@@ -2,37 +2,28 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getOrders, updateOrder } from '../api/orders'
 
-// ── Status display config ────────────────────────────────────────
-const STATUS_STYLES = {
-  received:  'bg-gray-100 text-gray-700',
-  cutting:   'bg-blue-100 text-blue-700',
-  stitching: 'bg-amber-100 text-amber-700',
-  finishing: 'bg-orange-100 text-orange-700',
-  ready:     'bg-green-100 text-green-700',
-  delivered: 'bg-emerald-100 text-emerald-800',
+// ── Status config ────────────────────────────────────────────────
+// Each status has a left-border color (section header) and a badge style.
+// Workflow order: received → cutting → stitching → finishing → ready → delivered
+const STATUS_CONFIG = {
+  received:  { border: 'border-gray-400',    badge: 'bg-gray-100 text-gray-700',        label: 'Received' },
+  cutting:   { border: 'border-blue-400',    badge: 'bg-blue-100 text-blue-700',        label: 'Cutting' },
+  stitching: { border: 'border-amber-400',   badge: 'bg-amber-100 text-amber-700',      label: 'Stitching' },
+  finishing: { border: 'border-orange-400',  badge: 'bg-orange-100 text-orange-700',    label: 'Finishing' },
+  ready:     { border: 'border-green-400',   badge: 'bg-green-100 text-green-700',      label: 'Ready for Pickup' },
+  delivered: { border: 'border-emerald-400', badge: 'bg-emerald-100 text-emerald-800',  label: 'Delivered' },
 }
 
-// Status sort rank — workflow order, NOT alphabetical.
-// received is earliest (rank 1), delivered is furthest along (rank 6).
-// Sorting by status ASC = "show oldest work first" — most urgent at top.
-const STATUS_RANK = {
-  received:  1,
-  cutting:   2,
-  stitching: 3,
-  finishing: 4,
-  ready:     5,
-  delivered: 6,
-}
+// Active statuses shown as sections (delivered is handled separately)
+const ACTIVE_STATUSES  = ['received', 'cutting', 'stitching', 'finishing', 'ready']
+const FILTER_STATUSES  = ['received', 'cutting', 'stitching', 'finishing', 'ready', 'delivered']
 
-// Status filter options — cancelled intentionally excluded.
-// Cancelled orders live in the undo panel below, not in the main list.
-const FILTER_STATUSES = ['received', 'cutting', 'stitching', 'finishing', 'ready', 'delivered']
+// Sort rank — used when sort=status to order the sections themselves
+const STATUS_RANK = { received: 1, cutting: 2, stitching: 3, finishing: 4, ready: 5, delivered: 6 }
 
 const fmt = (amount) =>
   `₹${parseFloat(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
-// ── Time remaining in the 24-hour undo window ────────────────────
-// cancelled_at + 24h = expiry. Show "23h 45m left" etc.
 const undoTimeLeft = (cancelledAt) => {
   const expiry = new Date(new Date(cancelledAt).getTime() + 24 * 60 * 60 * 1000)
   const msLeft = expiry - Date.now()
@@ -42,34 +33,121 @@ const undoTimeLeft = (cancelledAt) => {
   return hrs > 0 ? `${hrs}h ${mins}m left` : `${mins}m left`
 }
 
-// ── Sort icon ────────────────────────────────────────────────────
-// Shows ▲ (asc), ▼ (desc), or neutral ⇅ when column is inactive.
 function SortIcon({ field, sortField, sortDir }) {
   if (sortField !== field) return <span className="text-gray-300 ml-1">⇅</span>
   return <span className="text-brand-600 ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
 }
 
+// ── StatusSection ────────────────────────────────────────────────
+// Renders one collapsible section per status.
+// deliveredStyle = true gives the section a muted, de-emphasised look.
+function StatusSection({ status, orders, onView, onEdit, onCancel, deliveredStyle = false }) {
+  const [open, setOpen] = useState(!deliveredStyle) // delivered starts collapsed
+  const cfg = STATUS_CONFIG[status]
+  if (orders.length === 0) return null
+
+  const isOverdue = (o) =>
+    o.delivery_date &&
+    status !== 'delivered' &&
+    new Date(o.delivery_date) < new Date()
+
+  return (
+    <div className={`rounded-xl border overflow-hidden ${deliveredStyle ? 'border-gray-100 opacity-80' : 'border-gray-200'}`}>
+
+      {/* Section header — click to collapse/expand */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`w-full flex items-center justify-between px-5 py-3 border-l-4 ${cfg.border} ${deliveredStyle ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-50 transition-colors`}
+      >
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex px-2.5 py-0.5 rounded text-xs font-semibold ${cfg.badge}`}>
+            {cfg.label}
+          </span>
+          <span className="text-xs text-gray-400 font-medium">
+            {orders.length} order{orders.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <span className="text-gray-400 text-sm">{open ? '▾' : '▸'}</span>
+      </button>
+
+      {/* Table — only rendered when section is open */}
+      {open && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-t border-b border-gray-100 text-left text-xs text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-2">Order</th>
+              <th className="px-4 py-2">Customer</th>
+              <th className="px-4 py-2">Delivery</th>
+              <th className="px-4 py-2 text-right">Total</th>
+              <th className="px-4 py-2 text-right">Balance</th>
+              <th className="px-4 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {orders.map(order => (
+              <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+
+                <td className="px-4 py-3 font-mono font-medium text-gray-900 text-xs">
+                  {order.order_number}
+                </td>
+
+                <td className="px-4 py-3">
+                  <p className="font-medium text-gray-800">{order.customer_name}</p>
+                  <p className="text-xs text-gray-400">{order.customer_phone}</p>
+                </td>
+
+                <td className="px-4 py-3">
+                  {order.delivery_date ? (
+                    <span className={isOverdue(order) ? 'text-red-600 font-semibold' : 'text-gray-600'}>
+                      {new Date(order.delivery_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {isOverdue(order) && <span className="ml-1">⚠</span>}
+                    </span>
+                  ) : <span className="text-gray-300">—</span>}
+                </td>
+
+                <td className="px-4 py-3 text-right font-medium text-gray-800">
+                  {fmt(order.grand_total)}
+                </td>
+
+                <td className="px-4 py-3 text-right">
+                  <span className={parseFloat(order.balance_due) > 0 ? 'text-red-600 font-medium' : 'text-green-600'}>
+                    {fmt(order.balance_due)}
+                  </span>
+                </td>
+
+                <td className="px-4 py-3 text-right space-x-3">
+                  <button onClick={() => onView(order.id)}
+                    className="text-gray-500 hover:text-gray-700 font-medium text-xs">View</button>
+                  <button onClick={() => onEdit(order.id)}
+                    className="text-brand-600 hover:text-brand-700 font-medium text-xs">Edit</button>
+                  {status !== 'delivered' && (
+                    <button onClick={() => onCancel(order)}
+                      className="text-red-500 hover:text-red-700 font-medium text-xs">Cancel</button>
+                  )}
+                </td>
+
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// ── Main page ────────────────────────────────────────────────────
 export default function OrderList() {
   const navigate = useNavigate()
 
-  // ── Data state ────────────────────────────────────────────────
   const [orders,          setOrders]          = useState([])
   const [cancelledOrders, setCancelledOrders] = useState([])
+  const [search,          setSearch]          = useState('')
+  const [statusFilter,    setStatusFilter]    = useState('')
+  const [sortField,       setSortField]       = useState('created_at')
+  const [sortDir,         setSortDir]         = useState('desc')
+  const [loading,         setLoading]         = useState(true)
+  const [error,           setError]           = useState(null)
 
-  // ── Filter state ──────────────────────────────────────────────
-  const [search,       setSearch]       = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-
-  // ── Sort state ────────────────────────────────────────────────
-  // Default: newest orders first (created_at desc)
-  const [sortField, setSortField] = useState('created_at')
-  const [sortDir,   setSortDir]   = useState('desc')
-
-  // ── UI state ──────────────────────────────────────────────────
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
-
-  // ── Fetch active orders (excludes cancelled — backend handles that) ──
   const fetchOrders = useCallback(async (q, st) => {
     try {
       setLoading(true); setError(null)
@@ -81,69 +159,72 @@ export default function OrderList() {
     finally  { setLoading(false) }
   }, [])
 
-  // ── Fetch cancelled orders (for the undo panel) ───────────────
-  // The backend auto-purges anything > 24hrs old before returning,
-  // so whatever comes back here is guaranteed within the undo window.
   const fetchCancelled = useCallback(async () => {
-    try {
-      const data = await getOrders({ status: 'cancelled' })
-      setCancelledOrders(data)
-    } catch { /* undo panel is non-critical, fail silently */ }
+    try { setCancelledOrders(await getOrders({ status: 'cancelled' })) }
+    catch { /* non-critical */ }
   }, [])
 
-  // ── Debounced search / filter re-fetch ────────────────────────
   useEffect(() => {
     const t = setTimeout(() => fetchOrders(search, statusFilter), 350)
     return () => clearTimeout(t)
   }, [search, statusFilter, fetchOrders])
 
-  // ── Load cancelled orders once on mount ───────────────────────
   useEffect(() => { fetchCancelled() }, [fetchCancelled])
 
-  // ── Sort handler ──────────────────────────────────────────────
-  // Click same column → flip direction. Click different column → sort asc.
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDir('asc')
-    }
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
   }
 
-  // ── Client-side sort ──────────────────────────────────────────
-  // Data is already fetched — sorting in JS, no extra API call.
-  // Fine for a single-store app (hundreds, not millions of orders).
-  const sorted = [...orders].sort((a, b) => {
-    let cmp = 0
+  // ── Sort rows within a section ───────────────────────────────
+  // Status sort is handled at the section level (section order), so
+  // within a section we fall back to created_at when sort=status.
+  const sortRows = (rows) => {
+    const field = sortField === 'status' ? 'created_at' : sortField
+    return [...rows].sort((a, b) => {
+      let cmp = 0
+      if (field === 'delivery_date') {
+        const da = a.delivery_date ? new Date(a.delivery_date) : new Date('9999-12-31')
+        const db = b.delivery_date ? new Date(b.delivery_date) : new Date('9999-12-31')
+        cmp = da - db
+      } else if (field === 'order_number') {
+        cmp = a.order_number.localeCompare(b.order_number)
+      } else if (field === 'customer_name') {
+        cmp = a.customer_name.localeCompare(b.customer_name)
+      } else {
+        cmp = new Date(a.created_at) - new Date(b.created_at)
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }
 
-    if (sortField === 'status') {
-      // Custom rank — workflow order, not alphabetical
-      cmp = (STATUS_RANK[a.status] || 0) - (STATUS_RANK[b.status] || 0)
+  // ── Section order: status sort changes section sequence ──────
+  // ASC  = workflow order (received first)
+  // DESC = reverse workflow (delivered first — useful for end-of-day review)
+  const sectionOrder = sortField === 'status' && sortDir === 'desc'
+    ? [...ACTIVE_STATUSES].reverse()
+    : ACTIVE_STATUSES
 
-    } else if (sortField === 'delivery_date') {
-      // Orders without a delivery date always sort to the end
-      const da = a.delivery_date ? new Date(a.delivery_date) : new Date('9999-12-31')
-      const db = b.delivery_date ? new Date(b.delivery_date) : new Date('9999-12-31')
-      cmp = da - db
+  // ── Group orders by status ───────────────────────────────────
+  const grouped = {}
+  for (const status of [...ACTIVE_STATUSES, 'delivered']) {
+    grouped[status] = sortRows(orders.filter(o => o.status === status))
+  }
 
-    } else if (sortField === 'order_number') {
-      // String compare works: format is AT-YYYY-NNNN (zero-padded)
-      cmp = a.order_number.localeCompare(b.order_number)
+  const totalActive = ACTIVE_STATUSES.reduce((s, st) => s + grouped[st].length, 0)
 
-    } else if (sortField === 'customer_name') {
-      cmp = a.customer_name.localeCompare(b.customer_name)
+  // ── Sortable header (used in global filters area only) ───────
+  const Th = ({ field, children }) => (
+    <button
+      onClick={() => handleSort(field)}
+      className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors"
+    >
+      {children}
+      <SortIcon field={field} sortField={sortField} sortDir={sortDir} />
+    </button>
+  )
 
-    } else {
-      // created_at (default)
-      cmp = new Date(a.created_at) - new Date(b.created_at)
-    }
-
-    return sortDir === 'asc' ? cmp : -cmp
-  })
-
-  // ── Cancel: set status to 'cancelled', NOT a hard delete ─────
-  // The 24-hour undo window is anchored to this moment (cancelled_at = NOW() in DB).
+  // ── Action handlers ──────────────────────────────────────────
   const handleCancel = async (order) => {
     if (!window.confirm(`Cancel order ${order.order_number}?\nYou'll have 24 hours to undo this.`)) return
     try {
@@ -153,8 +234,6 @@ export default function OrderList() {
     } catch { alert('Could not cancel order.') }
   }
 
-  // ── Undo: restore cancelled order back to 'received' ─────────
-  // Clears cancelled_at in the DB so the order is active again.
   const handleUndo = async (order) => {
     try {
       await updateOrder(order.id, { status: 'received' })
@@ -162,20 +241,6 @@ export default function OrderList() {
       fetchOrders(search, statusFilter)
     } catch { alert('Could not undo cancellation.') }
   }
-
-  const isOverdue = (order) =>
-    order.delivery_date && new Date(order.delivery_date) < new Date()
-
-  // ── Sortable column header component ─────────────────────────
-  const Th = ({ field, children, className = '' }) => (
-    <th
-      onClick={() => handleSort(field)}
-      className={`px-4 py-3 cursor-pointer select-none hover:bg-gray-100 transition-colors ${className}`}
-    >
-      {children}
-      <SortIcon field={field} sortField={sortField} sortDir={sortDir} />
-    </th>
-  )
 
   return (
     <div>
@@ -185,7 +250,8 @@ export default function OrderList() {
           <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
           {!loading && (
             <p className="text-sm text-gray-500 mt-0.5">
-              {sorted.length} order{sorted.length !== 1 ? 's' : ''}
+              {totalActive} active order{totalActive !== 1 ? 's' : ''}
+              {grouped.delivered.length > 0 && ` · ${grouped.delivered.length} delivered`}
             </p>
           )}
         </div>
@@ -197,8 +263,8 @@ export default function OrderList() {
         </button>
       </div>
 
-      {/* ── Filters ────────────────────────────────────────────── */}
-      <div className="flex gap-3 mb-4 flex-wrap">
+      {/* ── Filters + Sort controls ─────────────────────────────── */}
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
         <input
           type="text"
           placeholder="Search order no. or customer..."
@@ -213,95 +279,71 @@ export default function OrderList() {
         >
           <option value="">All statuses</option>
           {FILTER_STATUSES.map(s => (
-            <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
           ))}
         </select>
       </div>
 
-      {/* ── Loading / error / empty states ─────────────────────── */}
+      {/* Sort pills */}
+      <div className="flex items-center gap-4 mb-5 text-xs">
+        <span className="text-gray-400">Sort by:</span>
+        <Th field="created_at">Date</Th>
+        <Th field="order_number">Order No.</Th>
+        <Th field="customer_name">Customer</Th>
+        <Th field="delivery_date">Delivery</Th>
+        <Th field="status">Status</Th>
+      </div>
+
+      {/* ── Loading / error states ──────────────────────────────── */}
       {loading && <div className="text-center py-16 text-gray-400 text-sm">Loading...</div>}
       {!loading && error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
       )}
-      {!loading && !error && sorted.length === 0 && (
-        <div className="text-center py-16 text-gray-400 text-sm">
-          {search || statusFilter ? 'No orders match your filters.' : 'No orders yet. Create the first one.'}
+
+      {/* ── Status sections ─────────────────────────────────────── */}
+      {!loading && !error && (
+        <div className="space-y-3">
+
+          {/* Active workflow sections in sort order */}
+          {sectionOrder.map(status => (
+            <StatusSection
+              key={status}
+              status={status}
+              orders={grouped[status]}
+              onView={id => navigate(`/orders/${id}`)}
+              onEdit={id => navigate(`/orders/${id}/edit`)}
+              onCancel={handleCancel}
+            />
+          ))}
+
+          {/* Empty state — only when no active orders at all */}
+          {totalActive === 0 && grouped.delivered.length === 0 && (
+            <div className="text-center py-16 text-gray-400 text-sm">
+              {search || statusFilter ? 'No orders match your filters.' : 'No orders yet. Create the first one.'}
+            </div>
+          )}
+
+          {/* ── Delivered section ─────────────────────────────────
+              Visually separated and collapsed by default.
+              Delivered = done work. No cancel button.
+          ──────────────────────────────────────────────────────── */}
+          {!statusFilter && grouped.delivered.length > 0 && (
+            <div className="pt-2">
+              <StatusSection
+                status="delivered"
+                orders={grouped.delivered}
+                onView={id => navigate(`/orders/${id}`)}
+                onEdit={id => navigate(`/orders/${id}/edit`)}
+                onCancel={handleCancel}
+                deliveredStyle={true}
+              />
+            </div>
+          )}
+
         </div>
       )}
 
-      {/* ── Main orders table ───────────────────────────────────── */}
-      {!loading && !error && sorted.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <Th field="order_number">Order</Th>
-                <Th field="customer_name">Customer</Th>
-                <Th field="status">Status</Th>
-                <Th field="delivery_date">Delivery</Th>
-                <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3 text-right">Balance</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sorted.map(order => (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-
-                  <td className="px-4 py-3 font-mono font-medium text-gray-900 text-xs">
-                    {order.order_number}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-gray-800">{order.customer_name}</p>
-                    <p className="text-xs text-gray-400">{order.customer_phone}</p>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[order.status]}`}>
-                      {order.status}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    {order.delivery_date ? (
-                      <span className={isOverdue(order) ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                        {new Date(order.delivery_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        {isOverdue(order) && ' ⚠'}
-                      </span>
-                    ) : <span className="text-gray-300">—</span>}
-                  </td>
-
-                  <td className="px-4 py-3 text-right font-medium text-gray-800">
-                    {fmt(order.grand_total)}
-                  </td>
-
-                  <td className="px-4 py-3 text-right">
-                    <span className={parseFloat(order.balance_due) > 0 ? 'text-red-600 font-medium' : 'text-green-600'}>
-                      {fmt(order.balance_due)}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3 text-right space-x-3">
-                    <button onClick={() => navigate(`/orders/${order.id}`)}
-                      className="text-gray-500 hover:text-gray-700 font-medium text-xs">View</button>
-                    <button onClick={() => navigate(`/orders/${order.id}/edit`)}
-                      className="text-brand-600 hover:text-brand-700 font-medium text-xs">Edit</button>
-                    <button onClick={() => handleCancel(order)}
-                      className="text-red-500 hover:text-red-700 font-medium text-xs">Cancel</button>
-                  </td>
-
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── Recently Cancelled — 24-hour undo panel ──────────────
-          Only shown when cancelled orders exist within the window.
-          After 24hrs, the backend auto-purges them; this section disappears.
-      ─────────────────────────────────────────────────────────── */}
+      {/* ── Recently Cancelled — 24-hour undo panel ─────────────── */}
       {cancelledOrders.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
