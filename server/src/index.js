@@ -7,6 +7,7 @@ const customerRoutes    = require('./routes/customerRoutes');
 const garmentTypeRoutes = require('./routes/garmentTypeRoutes');
 const orderRoutes       = require('./routes/orderRoutes');
 const settingsRoutes    = require('./routes/settingsRoutes');
+const paymentRoutes     = require('./routes/paymentRoutes');
 const errorHandler      = require('./middleware/errorHandler');
 
 const app  = express();
@@ -31,6 +32,7 @@ app.use('/api/customers',     customerRoutes);
 app.use('/api/garment-types', garmentTypeRoutes);
 app.use('/api/orders',        orderRoutes);
 app.use('/api/settings',      settingsRoutes);
+app.use('/api/orders/:orderId/payments', paymentRoutes);
 
 // -------------------------------------------------------------
 // Health check — always keep this working
